@@ -1,0 +1,13 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+  <file>icons/code.svg</file>
+  <file>icons/debug-breakpoint-stackframe-dot.svg</file>
+  <file>icons/debug-pause.svg</file>
+  <file>icons/debug-start.svg</file>
+  <file>icons/debug-step-into.svg</file>
+  <file>icons/debug-step-out.svg</file>
+  <file>icons/debug-step-over.svg</file>
+  <file>icons/debug-stop.svg</file>
+  <file>icons/file-binary.svg</file>
+</qresource>
+</RCC>
