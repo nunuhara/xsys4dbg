@@ -32,6 +32,7 @@ class MainWindow : public QMainWindow
 	Q_OBJECT
 public:
 	MainWindow(QWidget *parent = nullptr);
+	~MainWindow();
 
 private slots:
 	void open();
@@ -57,7 +58,7 @@ private:
 
 	QMenu *fileMenu;
 	QMenu *recentMenu;
-	QMenu *viewMenu;
+	QMenu *viewMenu = nullptr;
 	QMenu *debugMenu;
 	QMenu *helpMenu;
 

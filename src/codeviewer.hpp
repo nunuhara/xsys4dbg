@@ -117,6 +117,7 @@ class CodeViewer : public QSplitter
 	Q_OBJECT
 public:
 	CodeViewer(QWidget *parent = nullptr);
+	~CodeViewer();
 
 	void setAin(struct ain *a);
 	void setFunction(const QString &name);

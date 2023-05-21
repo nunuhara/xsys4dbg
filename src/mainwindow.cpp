@@ -41,6 +41,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 	connect(&Debugger::getInstance(), &Debugger::errorOccurred, this, &MainWindow::error);
 }
 
+MainWindow::~MainWindow()
+{
+	recentMenu->clear();
+	for (QAction *act : recentActions) {
+		delete act;
+	}
+	if (ain)
+		ain_free(ain);
+	if (viewMenu)
+		delete viewMenu;
+}
+
 void MainWindow::open()
 {
 	QString dirName = QFileDialog::getExistingDirectory(this, tr("Open Game Directory"));
@@ -310,6 +322,14 @@ static char *conv_utf8(const char *sjis)
 	return sjis2utf(sjis, 0);
 }
 
+static void ini_free(struct ini_entry *ini, int nr_entries)
+{
+	for (int i = 0; i < nr_entries; i++) {
+		ini_free_entry(&ini[i]);
+	}
+	free(ini);
+}
+
 void MainWindow::openGameDir(const QString &path)
 {
 	QDir dir(path);
@@ -335,6 +355,7 @@ void MainWindow::openGameDir(const QString &path)
 		if (!strcmp(ini[i].name->text, "CodeName")) {
 			if (ini[i].value.type != INI_STRING) {
 				error(".ini \"CodeName\" value is not a string");
+				ini_free(ini, ini_size);
 				return;
 			}
 			code_name = ini[i].value.s->text;
@@ -349,12 +370,14 @@ void MainWindow::openGameDir(const QString &path)
 	}
 	if (code_name == NULL) {
 		error(".ini file has no \"CodeName\" value");
+		ini_free(ini, ini_size);
 		return;
 	}
 
 	QFile ainFile(dir.filePath(code_name));
 	if (!ainFile.exists()) {
 		error(QString(".ain file \"%1\" does not exist").arg(ainFile.fileName()));
+		ini_free(ini, ini_size);
 		return;
 	}
 
@@ -364,6 +387,7 @@ void MainWindow::openGameDir(const QString &path)
 	struct ain *ainObj;
 	if (!(ainObj = ain_open_conv(ainFile.fileName().toUtf8(), conv_utf8, &err))) {
 		error(QString("Error opening .ain file: %1").arg(ain_strerror(err)));
+		ini_free(ini, ini_size);
 		return;
 	}
 
@@ -386,6 +410,7 @@ void MainWindow::openGameDir(const QString &path)
 
 	if (!Debugger::getInstance().setGameDir(path)) {
 		error("setGameDir failed");
+		ini_free(ini, ini_size);
 		return;
 	}
 
@@ -406,4 +431,5 @@ void MainWindow::openGameDir(const QString &path)
 	}
 	settings.setValue("recent", recent);
 	updateRecentActions();
+	ini_free(ini, ini_size);
 }

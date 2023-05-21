@@ -482,6 +482,13 @@ CodeViewer::CodeViewer(QWidget *parent)
 			this, &CodeViewer::stackFrameChanged);
 }
 
+CodeViewer::~CodeViewer()
+{
+	for (int i = 0; i < varModels.size(); i++) {
+		delete varModels[i];
+	}
+}
+
 void CodeViewer::setAin(struct ain *a)
 {
 	code = a;
