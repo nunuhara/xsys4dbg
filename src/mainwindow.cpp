@@ -19,6 +19,7 @@
 #include "debugger.hpp"
 #include "mainwindow.hpp"
 #include "outputlog.hpp"
+#include "sceneviewer.hpp"
 #include "settingsdialog.hpp"
 #include "version.hpp"
 
@@ -270,10 +271,16 @@ void MainWindow::createViewer()
 	const QIcon codeIcon = QIcon(codeImage);
 	codeViewer = new CodeViewer;
 	tabWidget->addTab(codeViewer, codeIcon, "Code");
-	setCentralWidget(tabWidget);
 
 	connect(codeViewer, &CodeViewer::functionChanged,
 			this, &MainWindow::onFunctionChanged);
+
+	const QPixmap sceneImage = QPixmap(":/icons/file-media.svg");
+	const QIcon sceneIcon = QIcon(sceneImage);
+	SceneViewer *sv = new SceneViewer;
+	tabWidget->addTab(sv, sceneIcon, "Scene");
+
+	setCentralWidget(tabWidget);
 }
 
 void MainWindow::readSettings()

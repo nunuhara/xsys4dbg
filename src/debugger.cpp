@@ -39,6 +39,8 @@ Debugger::Debugger() : QObject()
 	connect(&client, &DAPClient::scopesReceived, this, &Debugger::onScopesReceived);
 	connect(&client, &DAPClient::variablesReceived, this, &Debugger::onVariablesReceived);
 	connect(&client, &DAPClient::breakpointsReceived, this, &Debugger::onBreakpointsReceived);
+	connect(&client, &DAPClient::sceneReceived, this, &Debugger::onSceneReceived);
+	connect(&client, &DAPClient::renderEntityReceived, this, &Debugger::onRenderEntityReceived);
 	connect(&client, &DAPClient::errorOccurred, [this](const QString &message) {
 		emit errorOccurred(QString("DAP Error: ") + message);
 	});
@@ -112,6 +114,13 @@ bool Debugger::isBreakpoint(uint32_t addr)
 	return instructionBreakpoints.contains(addr);
 }
 
+static QHash<int, renderEntityHandler> renderEntityRequests;
+
+void Debugger::renderEntity(int id, renderEntityHandler handler)
+{
+	renderEntityRequests[client.requestRenderEntity(id)] = handler;
+}
+
 void Debugger::launch()
 {
 	client.launch();
@@ -148,10 +157,12 @@ static QHash<int, int> pendingScopes;
 static QHash<int, QPair<int, int>> pendingVariables;
 static QVector<Debugger::StackFrame> stackTrace;
 
+static int pendingScene = 0;
+
 void Debugger::onStackTraceReceived(int reqId, QVector<DAPClient::StackFrame> &frames)
 {
 	if (reqId != pendingStackTrace) {
-		qDebug() << "unknown stackTrace request: " << reqId;
+		qDebug() << "unknown stackTrace request:" << reqId;
 		return;
 	}
 	pendingStackTrace = 0;
@@ -171,7 +182,7 @@ void Debugger::onStackTraceReceived(int reqId, QVector<DAPClient::StackFrame> &f
 void Debugger::onScopesReceived(int reqId, QVector<DAPClient::Scope> &scopes)
 {
 	if (!pendingScopes.contains(reqId)) {
-		qDebug() << "unknown scopes request: " << reqId;
+		qDebug() << "unknown scopes request:" << reqId;
 		return;
 	}
 
@@ -195,7 +206,7 @@ void Debugger::onScopesReceived(int reqId, QVector<DAPClient::Scope> &scopes)
 void Debugger::onVariablesReceived(int reqId, QVector<DAPClient::Variable> &variables)
 {
 	if (!pendingVariables.contains(reqId)) {
-		qDebug() << "unknown variables request: " << reqId;
+		qDebug() << "unknown variables request:" << reqId;
 		return;
 	}
 	QPair<int, int> frameScope = pendingVariables.take(reqId);
@@ -220,6 +231,26 @@ void Debugger::onBreakpointsReceived(int reqId, QVector<uint32_t> &breakpoints)
 		instructionBreakpoints.insert(bp);
 	}
 	emit breakpointsReceived(instructionBreakpoints);
+}
+
+void Debugger::onSceneReceived(int reqId, const QVector<DAPClient::SceneEntity> &entities)
+{
+	if (reqId != pendingScene) {
+		qDebug() << "unknown scene request:" << reqId;
+		return;
+	}
+	emit sceneReceived(entities);
+}
+
+void Debugger::onRenderEntityReceived(int reqId, int entityId, const QPixmap &pixmap)
+{
+	if (!renderEntityRequests.contains(reqId)) {
+		qDebug() << "unknown renderEntity request:" << reqId;
+		return;
+	}
+
+	renderEntityHandler cb = renderEntityRequests.take(reqId);
+	cb(pixmap);
 }
 
 void Debugger::onInitialized()
@@ -249,6 +280,7 @@ void Debugger::onPaused()
 	pendingVariables.clear();
 	pendingScopes.clear();
 	pendingStackTrace = client.requestStackTrace();
+	pendingScene = client.requestScene();
 }
 
 void Debugger::onTerminated()

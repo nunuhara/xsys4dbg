@@ -14,6 +14,8 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <QImage>
+#include <QPixmap>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -154,6 +156,17 @@ int DAPClient::setInstructionBreakpoints(QSet<uint32_t> locations)
 	return sendRequest("setInstructionBreakpoints", args);
 }
 
+int DAPClient::requestScene()
+{
+	return sendRequest("xsystem4.scene");
+}
+
+int DAPClient::requestRenderEntity(int entityId)
+{
+	QJsonObject args { { "entityId", entityId } };
+	return sendRequest("xsystem4.renderEntity", args);
+}
+
 void DAPClient::handleEvent(QJsonObject &event)
 {
 	QString evtype = event["event"].toString();
@@ -174,6 +187,52 @@ void DAPClient::handleEvent(QJsonObject &event)
 	} else {
 		qDebug() << "Unhandled event type: " << evtype;
 	}
+}
+
+static void parse_color(DAPClient::Color &color, QJsonValue val)
+{
+	if (val.isArray()) {
+		QJsonArray ar = val.toArray();
+		color.r = ar[0].toInt();
+		color.g = ar[1].toInt();
+		color.b = ar[2].toInt();
+		color.a = ar[3].toInt();
+	} else {
+		QJsonObject obj = val.toObject();
+		color.r = obj["r"].toInt();
+		color.g = obj["g"].toInt();
+		color.b = obj["b"].toInt();
+		color.a = obj["a"].toInt();
+	}
+}
+
+static void parse_rectangle(DAPClient::Rectangle &rect, QJsonValue val)
+{
+	if (val.isArray()) {
+		QJsonArray ar = val.toArray();
+		rect.x = ar[0].toInt();
+		rect.y = ar[1].toInt();
+		rect.w = ar[2].toInt();
+		rect.h = ar[3].toInt();
+	} else {
+		QJsonObject obj = val.toObject();
+		rect.x = obj["x"].toInt();
+		rect.y = obj["y"].toInt();
+		rect.w = obj["w"].toInt();
+		rect.h = obj["h"].toInt();
+	}
+}
+
+static void parse_sprite(DAPClient::Sprite &sprite, QJsonObject obj)
+{
+	sprite.no = obj["no"].toInt();
+	parse_color(sprite.color, obj["color"]);
+	parse_color(sprite.multiply_color, obj["multiply_color"]);
+	parse_color(sprite.add_color, obj["add_color"]);
+	sprite.blend_rate = obj["blend_rate"].toInt();
+	sprite.draw_method = obj["draw_method"].toString();
+	parse_rectangle(sprite.rect, obj["rect"]);
+	sprite.cg_no = obj["cg_no"].toInt();
 }
 
 void DAPClient::handleResponse(QJsonObject &response)
@@ -236,7 +295,6 @@ void DAPClient::handleResponse(QJsonObject &response)
 		}
 		emit variablesReceived(reqId, vars);
 	} else if (cmd == "setInstructionBreakpoints") {
-		qDebug() << response;
 		QJsonArray jBreakpoints = response["body"].toObject()["breakpoints"].toArray();
 		QVector<uint32_t> breakpoints;
 		for (int i = 0; i < jBreakpoints.size(); i++) {
@@ -249,6 +307,39 @@ void DAPClient::handleResponse(QJsonObject &response)
 			breakpoints.push_back(addrStr.toULong(nullptr, 16));
 		}
 		emit breakpointsReceived(reqId, breakpoints);
+	} else if (cmd == "xsystem4.scene") {
+		QJsonArray jEntities = response["body"].toObject()["entities"].toArray();
+		QVector<SceneEntity> entities(jEntities.size());
+		for (int i = 0; i < jEntities.size(); i++) {
+			QJsonObject obj = jEntities[i].toObject();
+			entities[i].id = obj["id"].toInt();
+			entities[i].z = obj["z"].toInt();
+			entities[i].z2 = obj["z2"].toInt();
+			if (!obj.contains("sprite")) {
+				entities[i].sprite.no = -1;
+				entities[i].name = "<anonymous entity>";
+				continue;
+			}
+			parse_sprite(entities[i].sprite, obj["sprite"].toObject());
+			entities[i].name = QString("sprite %1").arg(entities[i].sprite.no);
+		}
+		emit sceneReceived(reqId, entities);
+	} else if (cmd == "xsystem4.renderEntity") {
+		QJsonObject body = response["body"].toObject();
+		int entityId = body["entityId"].toInt();
+		QJsonObject texture = body["texture"].toObject();
+		int width = texture["width"].toInt();
+		int height = texture["height"].toInt();
+		QByteArray b64 = texture["pixels"].toString().toLatin1();
+		QByteArray pixels = QByteArray::fromBase64(b64, QByteArray::Base64Encoding);
+		if (pixels.size() < width * height * 4) {
+			qDebug() << "pixel data truncated?";
+		} else {
+			QImage image((uchar*)pixels.data(), width, height, width * 4,
+					QImage::Format_RGBA8888);
+			QPixmap pixmap = QPixmap::fromImage(image);
+			emit renderEntityReceived(reqId, entityId, pixmap);
+		}
 	}
 }
 

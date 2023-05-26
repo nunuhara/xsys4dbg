@@ -9,5 +9,6 @@
   <file>icons/debug-step-over.svg</file>
   <file>icons/debug-stop.svg</file>
   <file>icons/file-binary.svg</file>
+  <file>icons/file-media.svg</file>
 </qresource>
 </RCC>
