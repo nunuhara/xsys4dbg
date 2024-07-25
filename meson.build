@@ -1,6 +1,4 @@
 project('xsys4-dbg', 'cpp')
-add_project_arguments(['-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=0'], language : 'cpp')
-#add_project_arguments('-O1', language : 'cpp')
 
 qt5 = import('qt5')
 qt5_dep = dependency('qt5', modules : ['Core', 'Gui', 'Widgets'])

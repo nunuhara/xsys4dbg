@@ -51,6 +51,7 @@ public:
 	bool isBreakpoint(uint32_t addr);
 
 	void renderEntity(int id, renderEntityHandler handler);
+	void renderParts(int no, renderEntityHandler handler);
 
 	struct Scope {
 		QString name;
@@ -83,7 +84,7 @@ signals:
 	void outputReceived(const QString &source, const QString &message);
 	void stackTraceReceived(QVector<StackFrame> &frames);
 	void breakpointsReceived(QSet<uint32_t> &breakpoints);
-	void sceneReceived(const QVector<DAPClient::SceneEntity> &entities);
+	void sceneReceived(const QVector<SceneEntity> &entities);
 
 	void errorOccurred(const QString &message);
 
@@ -98,8 +99,9 @@ private slots:
 	void onScopesReceived(int reqId, QVector<DAPClient::Scope> &scopes);
 	void onVariablesReceived(int reqId, QVector<DAPClient::Variable> &variables);
 	void onBreakpointsReceived(int reqId, QVector<uint32_t> &breakpoints);
-	void onSceneReceived(int reqId, const QVector<DAPClient::SceneEntity> &entities);
+	void onSceneReceived(int reqId, const QVector<SceneEntity> &entities);
 	void onRenderEntityReceived(int reqId, int entityId, const QPixmap &image);
+	void onRenderPartsReceived(int reqId, int partsNo, const QPixmap &image);
 
 private:
 	Debugger();

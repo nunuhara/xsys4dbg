@@ -22,6 +22,7 @@
 #include <QVariant>
 #include <QVector>
 #include <QString>
+#include "xsystem4.hpp"
 
 class QStringList;
 class QProcess;
@@ -47,6 +48,7 @@ public:
 	int requestScene();
 	int requestRenderEntity(int entityId);
 	int requestSpriteTexture(int spriteId);
+	int requestRenderParts(int partsId);
 
 	struct StackFrame {
 		int id;
@@ -65,29 +67,6 @@ public:
 		QString value;
 		QString type;
 		int variablesReference;
-	};
-
-	struct Color { int r, g, b, a; };
-	struct Rectangle { int x, y, w, h; };
-
-	struct Sprite {
-		int no;
-		struct Color color;
-		struct Color multiply_color;
-		struct Color add_color;
-		int blend_rate;
-		QString draw_method;
-		struct Rectangle rect;
-		int cg_no;
-		// TODO: text
-	};
-
-	struct SceneEntity {
-		QString name;
-		int id;
-		int z;
-		int z2;
-		struct Sprite sprite;
 	};
 
 public slots:
@@ -111,6 +90,7 @@ signals:
 	void breakpointsReceived(int reqId, QVector<uint32_t> &breakpoints);
 	void sceneReceived(int reqId, const QVector<SceneEntity> &entities);
 	void renderEntityReceived(int reqId, int entityId, const QPixmap &pixmap);
+	void renderPartsReceived(int reqId, int partsNo, const QPixmap &pixmap);
 	void errorOccurred(const QString &message);
 
 private:

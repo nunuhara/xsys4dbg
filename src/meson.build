@@ -8,6 +8,7 @@ gui_sources = ['codeviewer.cpp',
                'settingsdialog.cpp',
                'syntaxhighlighter.cpp',
                'variablesmodel.cpp',
+               'xsystem4.cpp',
 ]
 
 gui_moc = ['codeviewer.hpp',

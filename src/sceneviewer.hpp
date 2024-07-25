@@ -21,11 +21,11 @@
 #include <QSplitter>
 #include <QVector>
 
-#include "debugger.hpp"
+#include "xsystem4.hpp"
 
-class QListView;
 class QScrollArea;
 class QTableView;
+class QTreeView;
 class QPixmap;
 
 class SceneViewer : public QSplitter
@@ -35,29 +35,62 @@ public:
 	SceneViewer(QWidget *parent = nullptr);
 	~SceneViewer();
 private slots:
-	void onSceneReceived(const QVector<DAPClient::SceneEntity> &entities);
+	void onSceneReceived(const QVector<SceneEntity> &entities);
 	void onCurrentChanged(const QModelIndex &current, const QModelIndex &previous);
 	void onActivated(const QModelIndex &index);
 private:
 	QScrollArea *imageArea;
-	QListView *listView;
-	QTableView *tableView;
-	QVector<DAPClient::SceneEntity> entities;
+	QTreeView *listView;
+	QTreeView *detailView;
+	QVector<SceneEntity> entities;
 	QVector<QPixmap> entityImages;
 	int sceneId = 0;
 };
 
-class SceneEntityModel : public QAbstractTableModel
+struct SceneNode;
+
+class SceneTreeModel : public QAbstractItemModel
 {
 	Q_OBJECT
 public:
-	SceneEntityModel(const DAPClient::SceneEntity &e, QObject *parent = nullptr);
+	explicit SceneTreeModel(const QVector<SceneEntity> &entityList, QObject *parent = nullptr);
+	~SceneTreeModel();
+
+	QVariant data(const QModelIndex &index, int role) const override;
+	Qt::ItemFlags flags(const QModelIndex &index) const override;
+	QVariant headerData(int section, Qt::Orientation orientation,
+			int role = Qt::DisplayRole) const override;
+	QModelIndex index(int row, int column,
+			const QModelIndex &parent = QModelIndex()) const override;
+	QModelIndex parent(const QModelIndex &index) const override;
 	int rowCount(const QModelIndex &parent = QModelIndex()) const override;
 	int columnCount(const QModelIndex &parent = QModelIndex()) const override;
-	QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
-	QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 private:
-	DAPClient::SceneEntity entity;
+	QVector<SceneEntity> entities;
+	SceneNode *rootNode;
+};
+
+struct EntityNode;
+
+class EntityModel : public QAbstractItemModel
+{
+	Q_OBJECT
+public:
+	explicit EntityModel(const SceneEntity &e, QObject *parent = nullptr);
+	explicit EntityModel(const Parts &p, QObject *parent = nullptr);
+	~EntityModel();
+
+	QVariant data(const QModelIndex &index, int role) const override;
+	Qt::ItemFlags flags(const QModelIndex &index) const override;
+	QVariant headerData(int section, Qt::Orientation orientation,
+			int role = Qt::DisplayRole) const override;
+	QModelIndex index(int row, int column,
+			const QModelIndex &parent = QModelIndex()) const override;
+	QModelIndex parent(const QModelIndex &index) const override;
+	int rowCount(const QModelIndex &parent = QModelIndex()) const override;
+	int columnCount(const QModelIndex &parent = QModelIndex()) const override;
+private:
+	EntityNode *rootNode;
 };
 
 #endif

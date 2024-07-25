@@ -20,78 +20,55 @@
 #include <QAbstractTableModel>
 
 #include "sceneviewer.hpp"
+#include "debugger.hpp"
 
-SceneEntityModel::SceneEntityModel(const DAPClient::SceneEntity &e, QObject *parent)
-	: QAbstractTableModel(parent)
+struct SceneNode
 {
-	entity = e;
-}
+	SceneNode() : parent(nullptr), type(ROOT) {};
+	explicit SceneNode(SceneEntity *e, SceneNode *parentNode = nullptr);
+	explicit SceneNode(Parts *p, SceneNode *parentNode);
+	~SceneNode() { qDeleteAll(children); };
 
-int SceneEntityModel::rowCount(const QModelIndex &parent) const
-{
-	if (entity.sprite.no < 0)
-		return 1;
-	return 9;
-}
-
-int SceneEntityModel::columnCount(const QModelIndex &parent) const
-{
-	return 2;
-}
-
-static QString color_to_string(const DAPClient::Color &c)
-{
-	return QString("(%1 %2 %3 %4)").arg(c.r).arg(c.g).arg(c.b).arg(c.a);
-}
-
-static QString rect_to_string(const DAPClient::Rectangle &r)
-{
-	return QString("(%1 %2 %3 %4)").arg(r.x).arg(r.y).arg(r.w).arg(r.h);
-}
-
-QVariant SceneEntityModel::data(const QModelIndex &index, int role) const
-{
-	if (role != Qt::DisplayRole)
-		return QVariant();
-
-	if (index.column() == 0) {
-		switch (index.row()) {
-		case 0: return "Z";
-		case 1: return "ID";
-		case 2: return "Color";
-		case 3: return "Multiply Color";
-		case 4: return "Add Color";
-		case 5: return "Blend Rate";
-		case 6: return "Draw Method";
-		case 7: return "Position";
-		case 8: return "CG Number";
-		}
-	} else if (index.column() == 1) {
-		switch (index.row()) {
-		case 0: return entity.z;
-		case 1: return entity.sprite.no;
-		case 2: return color_to_string(entity.sprite.color);
-		case 3: return color_to_string(entity.sprite.multiply_color);
-		case 4: return color_to_string(entity.sprite.add_color);
-		case 5: return entity.sprite.blend_rate;
-		case 6: return entity.sprite.draw_method;
-		case 7: return rect_to_string(entity.sprite.rect);
-		case 8: return entity.sprite.cg_no;
-		}
+	int row() const {
+		if (parent)
+			return parent->children.indexOf(const_cast<SceneNode*>(this));
+		return 0;
 	}
-	return QVariant();
+
+	SceneNode *parent;
+	QVector<SceneNode*> children;
+
+	enum SceneNodeType {
+		ROOT,
+		ENTITY,
+		PARTS,
+	} type;
+	union {
+		SceneEntity *entity;
+		Parts *parts;
+	} data;
+
+	QPixmap image;
+};
+
+SceneNode::SceneNode(SceneEntity *e, SceneNode *parentNode)
+	: parent(parentNode)
+	, type(ENTITY)
+{
+	data.entity = e;
+	for (Parts &p : e->parts) {
+		children.append(new SceneNode(&p, this));
+	}
 }
 
-QVariant SceneEntityModel::headerData(int section, Qt::Orientation orientation, int role) const
+SceneNode::SceneNode(Parts *p, SceneNode *parentNode)
+	: parent(parentNode)
+	, type(PARTS)
 {
-	if (role != Qt::DisplayRole || orientation != Qt::Horizontal)
-		return QVariant();
-
-	switch (section) {
-	case 0: return "Property";
-	case 1: return "Value";
+	data.parts = p;
+	for (Parts &child : p->children) {
+		children.append(new SceneNode(&child, this));
 	}
-	return QVariant();
 }
 
 SceneViewer::SceneViewer(QWidget *parent)
@@ -100,24 +77,12 @@ SceneViewer::SceneViewer(QWidget *parent)
 	imageArea = new QScrollArea;
 	imageArea->setAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
 
-	listView = new QListView;
-	listView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
-	tableView = new QTableView;
-	// XXX: need a dummy model to set initial column width...
-	DAPClient::SceneEntity dummy = {
-		.name = "<placeholder>",
-		.id = -1,
-		.z = 0,
-		.z2 = 0,
-		.sprite = { .no = -1 }
-	};
-	tableView->setModel(new SceneEntityModel(dummy));
-	tableView->setColumnWidth(1, 125);
+	listView = new QTreeView;
+	detailView = new QTreeView;
 
 	QSplitter *rightPane = new QSplitter(Qt::Vertical);
 	rightPane->addWidget(listView);
-	rightPane->addWidget(tableView);
+	rightPane->addWidget(detailView);
 
 	addWidget(imageArea);
 	addWidget(rightPane);
@@ -134,67 +99,542 @@ SceneViewer::SceneViewer(QWidget *parent)
 SceneViewer::~SceneViewer()
 {
 	delete listView->model();
-	delete tableView->model();
+	delete detailView->model();
 }
 
-void SceneViewer::onSceneReceived(const QVector<DAPClient::SceneEntity> &sceneEntities)
+void SceneViewer::onSceneReceived(const QVector<SceneEntity> &sceneEntities)
 {
 	sceneId++;
 	entities = sceneEntities;
 	entityImages.clear();
 	entityImages.resize(sceneEntities.size());
 
-	QStringList names;
-
-	for (DAPClient::SceneEntity &e : entities) {
-		names.append(e.name);
-	}
-
 	QAbstractItemModel *oldModel = listView->model();
-	listView->setModel(new QStringListModel(names));
+	listView->setModel(new SceneTreeModel(entities));
 	delete oldModel;
 
+	connect(listView, &QTreeView::activated, this, &SceneViewer::onActivated);
 	connect(listView->selectionModel(), &QItemSelectionModel::currentChanged,
 			this, &SceneViewer::onCurrentChanged);
-	connect(listView, &QAbstractItemView::activated, this, &SceneViewer::onActivated);
+}
+
+static SceneNode *getNode(const QModelIndex &index)
+{
+	if (!index.isValid())
+		return nullptr;
+	SceneNode *node = static_cast<SceneNode*>(index.internalPointer());
+	if (node->type == SceneNode::ROOT)
+		return nullptr;
+	return node;
 }
 
 void SceneViewer::onCurrentChanged(const QModelIndex &current, const QModelIndex &previous)
 {
-	int row = current.row();
-	if (row < 0 || row >= entities.size()) {
-		qDebug() << "invalid entity index:" << row;
+	SceneNode *node = getNode(current);
+	if (!node)
 		return;
-	}
 
-	const DAPClient::SceneEntity &e = entities[row];
-	QAbstractItemModel *oldModel = tableView->model();
-	tableView->setModel(new SceneEntityModel(e));
-	delete oldModel;
+	if (node->type == SceneNode::ENTITY) {
+		QAbstractItemModel *oldModel = detailView->model();
+		detailView->setModel(new EntityModel(*node->data.entity));
+		//tableView->setModel(new SceneEntityModel(*node->data.entity));
+		delete oldModel;
+	} else if (node->type == SceneNode::PARTS) {
+		QAbstractItemModel *oldModel = detailView->model();
+		detailView->setModel(new EntityModel(*node->data.parts));
+		delete oldModel;
+	}
 }
 
 void SceneViewer::onActivated(const QModelIndex &index)
 {
-	int row = index.row();
-	if (row < 0 || row >= entities.size()) {
-		qDebug() << "invalid entity index" << row;
+	if (!index.isValid())
 		return;
-	}
-
-	if (!entityImages[row].isNull()) {
-		QLabel *imageLabel = new QLabel;
-		imageLabel->setPixmap(entityImages[row]);
-		imageArea->setWidget(imageLabel);
-		return;
-	}
 
 	int id = sceneId;
-	Debugger::getInstance().renderEntity(entities[row].id, [this, row, id](const QPixmap &pixmap) {
-		if (id != sceneId)
-			return;
-		entityImages[row] = pixmap;
+
+	SceneNode *node = static_cast<SceneNode*>(index.internalPointer());
+	if (!node->image.isNull()) {
 		QLabel *imageLabel = new QLabel;
-		imageLabel->setPixmap(pixmap);
+		imageLabel->setPixmap(node->image);
 		imageArea->setWidget(imageLabel);
-	});
+		return;
+	}
+
+	if (node->type == SceneNode::ENTITY) {
+		Debugger::getInstance().renderEntity(node->data.entity->id,
+				[this, node, id](const QPixmap &pixmap) {
+			if (id != sceneId)
+				return;
+			node->image = pixmap;
+			QLabel *imageLabel = new QLabel;
+			imageLabel->setPixmap(pixmap);
+			imageArea->setWidget(imageLabel);
+		});
+	} else if (node->type == SceneNode::PARTS) {
+		Debugger::getInstance().renderParts(node->data.parts->no,
+				[this, node, id](const QPixmap &pixmap) {
+			if (id != sceneId)
+				return;
+			node->image = pixmap;
+			QLabel *imageLabel = new QLabel;
+			imageLabel->setPixmap(pixmap);
+			imageArea->setWidget(imageLabel);
+		});
+	}
+}
+
+SceneTreeModel::SceneTreeModel(const QVector<SceneEntity> &entityList, QObject *parent)
+	: QAbstractItemModel(parent)
+	, entities(entityList)
+{
+	rootNode = new SceneNode;
+	for (SceneEntity &e : entities) {
+		rootNode->children.append(new SceneNode(&e, rootNode));
+	}
+}
+
+SceneTreeModel::~SceneTreeModel()
+{
+	delete rootNode;
+}
+
+QVariant SceneTreeModel::data(const QModelIndex &index, int role) const
+{
+	if (!index.isValid())
+		return QVariant();
+	if (role != Qt::DisplayRole)
+		return QVariant();
+
+	SceneNode *node = static_cast<SceneNode*>(index.internalPointer());
+	if (node->type == SceneNode::ENTITY) {
+		return node->data.entity->name;
+	} else if (node->type == SceneNode::PARTS) {
+		return QString("parts %1 (%2)")
+			.arg(node->data.parts->no)
+			.arg(node->data.parts->description());
+	}
+	return QVariant();
+}
+
+Qt::ItemFlags SceneTreeModel::flags(const QModelIndex &index) const
+{
+	if (!index.isValid())
+		return Qt::NoItemFlags;
+	return QAbstractItemModel::flags(index);
+}
+
+QVariant SceneTreeModel::headerData(int section, Qt::Orientation orientation,
+		int role) const
+{
+	if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+		return QVariant();
+	// TODO?
+	return QVariant();
+}
+
+QModelIndex SceneTreeModel::index(int row, int column, const QModelIndex &parent) const
+{
+	if (!hasIndex(row, column, parent))
+		return QModelIndex();
+
+	SceneNode *parentNode;
+	if (!parent.isValid())
+		parentNode = rootNode;
+	else
+		parentNode = static_cast<SceneNode*>(parent.internalPointer());
+
+	if (row < 0 || row >= parentNode->children.count())
+		return QModelIndex();
+	return createIndex(row, column, parentNode->children.at(row));
+}
+
+QModelIndex SceneTreeModel::parent(const QModelIndex &index) const
+{
+	if (!index.isValid())
+		return QModelIndex();
+
+	SceneNode *childNode = static_cast<SceneNode*>(index.internalPointer());
+	SceneNode *parentNode = childNode->parent;
+
+	if (parentNode == rootNode)
+		return QModelIndex();
+
+	return createIndex(parentNode->row(), 0, parentNode);
+}
+
+int SceneTreeModel::rowCount(const QModelIndex &parent) const
+{
+	if (parent.column() > 0)
+		return 0;
+
+	SceneNode *parentNode;
+	if (!parent.isValid())
+		parentNode = rootNode;
+	else
+		parentNode = static_cast<SceneNode*>(parent.internalPointer());
+
+	return parentNode->children.count();
+}
+
+int SceneTreeModel::columnCount(const QModelIndex &parent) const
+{
+	return 1;
+}
+
+struct EntityNode
+{
+	explicit EntityNode(const SceneEntity &e);
+	explicit EntityNode(const Parts &p);
+	explicit EntityNode(QString name, const PartsState &s, EntityNode *parentNode);
+	explicit EntityNode(QString name, const PartsTextLine &line, EntityNode *parentNode);
+	explicit EntityNode(QString name, const TextStyle &ts, EntityNode *parentNode);
+	explicit EntityNode(QString name, const PartsCpOp &op, EntityNode *parentNode);
+	explicit EntityNode(QString name, const PartsParams &p, EntityNode *parentNode);
+	explicit EntityNode(QString name, const PartsMotion &m, EntityNode *parentNode);
+	explicit EntityNode(QString name, QVariant value, EntityNode *parentNode);
+	~EntityNode() { qDeleteAll(children); }
+
+	int row() const {
+		if (parent)
+			return parent->children.indexOf(const_cast<EntityNode*>(this));
+		return 0;
+	}
+
+	EntityNode *parent;
+	QVector<EntityNode*> children;
+
+	QString name;
+	QVariant value;
+};
+
+EntityNode::EntityNode(const SceneEntity &e)
+	: parent(nullptr)
+{
+	children.append(new EntityNode("Z", e.z, this));
+	if (e.sprite.no < 0)
+		return;
+
+	children.append(new EntityNode("Color", e.sprite.color.toString(), this));
+	children.append(new EntityNode("Multiply Color", e.sprite.multiply_color.toString(), this));
+	children.append(new EntityNode("Add Color", e.sprite.add_color.toString(), this));
+	children.append(new EntityNode("Blend Rate", e.sprite.blend_rate, this));
+	children.append(new EntityNode("Bounding Rect", e.sprite.rect.toString(), this));
+	children.append(new EntityNode("CG No", e.sprite.cg_no, this));
+}
+
+EntityNode::EntityNode(const Parts &p)
+{
+	children.append(new EntityNode("State", p.state, this));
+	children.append(new EntityNode("Default", p.deflt, this));
+	children.append(new EntityNode("Hovered", p.hovered, this));
+	children.append(new EntityNode("Clicked", p.clicked, this));
+	children.append(new EntityNode("Local", p.local, this));
+	children.append(new EntityNode("Global", p.global, this));
+	children.append(new EntityNode("Delegate Index", p.delegateIndex, this));
+	children.append(new EntityNode("Sprite Deform", p.spriteDeform, this));
+	children.append(new EntityNode("clickable", p.clickable, this));
+	children.append(new EntityNode("OnCursor Sound", p.onCursorSound, this));
+	children.append(new EntityNode("OnClick Sound", p.onClickSound, this));
+	children.append(new EntityNode("Origin Mode", p.originMode, this));
+	children.append(new EntityNode("Linked To", p.linkedTo, this));
+	children.append(new EntityNode("Linked From", p.linkedFrom, this));
+
+	int i = 0;
+	EntityNode *motions;
+	children.append(motions = new EntityNode("Motions", QVariant(), this));
+	for (const PartsMotion &m : p.motions) {
+		motions->children.append(new EntityNode(QString("[%1]").arg(i++), m, this));
+	}
+}
+
+EntityNode::EntityNode(QString name, const PartsState &s, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	int i = 0;
+	EntityNode *child;
+	switch (s.type) {
+	case PARTS_CG:
+		value = "CG";
+		children.append(new EntityNode("No", s.data.cg.no, this));
+		break;
+	case PARTS_TEXT:
+		value = "Text";
+		children.append(child = new EntityNode("Lines", QVariant(), this));
+		for (const PartsTextLine &line : s.data.text.lines) {
+			child->children.append(new EntityNode(QString("[%1]").arg(i++), line, this));
+		}
+		children.append(new EntityNode("Line Space", s.data.text.lineSpace, this));
+		children.append(new EntityNode("Cursor", s.data.text.cursor.toString(), this));
+		children.append(new EntityNode("Style", s.data.text.textStyle, this));
+		break;
+	case PARTS_ANIMATION:
+		value = "Animation";
+		children.append(new EntityNode("Start No", s.data.anim.startNo, this));
+		children.append(new EntityNode("Frame Time", s.data.anim.frameTime, this));
+		children.append(new EntityNode("Elapsed", s.data.anim.elapsed, this));
+		children.append(new EntityNode("Current Frame", s.data.anim.currentFrame, this));
+		break;
+	case PARTS_NUMERAL:
+		value = "Numeral";
+		if (s.data.num.haveNum)
+			children.append(new EntityNode("Number", s.data.num.num, this));
+		children.append(new EntityNode("Space", s.data.num.space, this));
+		children.append(new EntityNode("Show Comma", s.data.num.showComma, this));
+		children.append(new EntityNode("Length", s.data.num.length, this));
+		children.append(new EntityNode("CG No", s.data.num.cgNo, this));
+		break;
+	case PARTS_HGAUGE:
+		value = "HGauge";
+		break;
+	case PARTS_VGAUGE:
+		value = "VGauge";
+		break;
+	case PARTS_CONSTRUCTION_PROCESS:
+		value = "Construction Process";
+		for (const PartsCpOp &op : s.data.cproc.operations) {
+			children.append(new EntityNode(QString("[%1]").arg(i++), op, this));
+		}
+		break;
+	case PARTS_UNINITIALIZED:
+		value = "<uninitialized>";
+		break;
+	case PARTS_INVALID:
+		value = "<invalid>";
+		break;
+	}
+}
+
+EntityNode::EntityNode(QString name, const TextStyle &ts, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	value = "TODO";
+}
+
+EntityNode::EntityNode(QString name, const PartsTextLine &line, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	children.append(new EntityNode("Contents", line.contents, this));
+	children.append(new EntityNode("Width", line.width, this));
+	children.append(new EntityNode("Height", line.height, this));
+}
+
+EntityNode::EntityNode(QString name, const PartsCpOp &op, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	switch (op.type) {
+	case PARTS_CP_CREATE: value = "Create"; break;
+	case PARTS_CP_CREATE_PIXEL_ONLY: value = "Create (Pixel Only)"; break;
+	case PARTS_CP_CG: value = "CG"; break;
+	case PARTS_CP_FILL: value = "Fill"; break;
+	case PARTS_CP_FILL_ALPHA_COLOR: value = "Fill Alpha Color"; break;
+	case PARTS_CP_FILL_AMAP: value = "Fill Alpha Map"; break;
+	case PARTS_CP_DRAW_CUT_CG: value = "Draw Cut CG"; break;
+	case PARTS_CP_COPY_CUT_CG: value = "Copy Cut CG"; break;
+	case PARTS_CP_DRAW_TEXT: value = "Draw Text"; break;
+	case PARTS_CP_COPY_TEXT: value = "Copy Text"; break;
+	case PARTS_CP_INVALID: value = "<invalid>"; break;
+	}
+	switch (op.type) {
+	case PARTS_CP_CREATE:
+	case PARTS_CP_CREATE_PIXEL_ONLY:
+		children.append(new EntityNode("Width", op.data.create.width, this));
+		children.append(new EntityNode("Height", op.data.create.height, this));
+		break;
+	case PARTS_CP_CG:
+		children.append(new EntityNode("No", op.data.cg.no, this));
+		break;
+	case PARTS_CP_FILL:
+	case PARTS_CP_FILL_ALPHA_COLOR:
+	case PARTS_CP_FILL_AMAP:
+		children.append(new EntityNode("Rectangle", op.data.fill.rect.toString(), this));
+		children.append(new EntityNode("Color", op.data.fill.color.toString(), this));
+		break;
+	case PARTS_CP_DRAW_CUT_CG:
+	case PARTS_CP_COPY_CUT_CG:
+		children.append(new EntityNode("CG No", op.data.cutCg.cgNo, this));
+		children.append(new EntityNode("Destination", op.data.cutCg.dst.toString(), this));
+		children.append(new EntityNode("Source", op.data.cutCg.src.toString(), this));
+		children.append(new EntityNode("Interpolation Type", op.data.cutCg.interpType, this));
+		break;
+	case PARTS_CP_DRAW_TEXT:
+	case PARTS_CP_COPY_TEXT:
+		children.append(new EntityNode("Text", op.data.text.text, this));
+		children.append(new EntityNode("Position", op.data.text.pos.toString(), this));
+		children.append(new EntityNode("Line Space", op.data.text.lineSpace, this));
+		children.append(new EntityNode("Style", op.data.text.style, this));
+		break;
+	case PARTS_INVALID:
+		break;
+	}
+}
+
+EntityNode::EntityNode(QString name, const PartsParams &p, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	children.append(new EntityNode("Z", p.z, this));
+	children.append(new EntityNode("Position", p.pos.toString(), this));
+	children.append(new EntityNode("Show", p.show, this));
+	children.append(new EntityNode("Alpha", p.alpha, this));
+	children.append(new EntityNode("Scale", p.scale.toString(), this));
+	children.append(new EntityNode("Rotation", p.rotation.toString(), this));
+	children.append(new EntityNode("Add Color", p.addColor.toString(), this));
+	children.append(new EntityNode("Multiply Color", p.mulColor.toString(), this));
+}
+
+EntityNode::EntityNode(QString name, const PartsMotion &m, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+{
+	switch (m.type) {
+	case PARTS_MOTION_POS: value = "Position"; break;
+	case PARTS_MOTION_VIBRATION_SIZE: value = "Vibration Size"; break;
+	case PARTS_MOTION_ALPHA: value = "Alpha"; break;
+	case PARTS_MOTION_CG: value = "CG"; break;
+	case PARTS_MOTION_NUMERAL_NUMBER: value = "Numeral Number"; break;
+	case PARTS_MOTION_HGAUGE_RATE: value = "HGauge Rate"; break;
+	case PARTS_MOTION_VGAUGE_RATE: value = "VGauge Rate"; break;
+	case PARTS_MOTION_MAG_X: value = "X-Magnitude"; break;
+	case PARTS_MOTION_MAG_Y: value = "Y-Magnitude"; break;
+	case PARTS_MOTION_ROTATE_X: value = "X-Rotation"; break;
+	case PARTS_MOTION_ROTATE_Y: value = "Y-Rotation"; break;
+	case PARTS_MOTION_ROTATE_Z: value = "Z-Rotation"; break;
+	case PARTS_MOTION_INVALID: value = "<invalid>"; return;
+	}
+	switch (m.type) {
+	case PARTS_MOTION_POS:
+	case PARTS_MOTION_VIBRATION_SIZE:
+		children.append(new EntityNode("Begin", m.begin.pos.toString(), this));
+		children.append(new EntityNode("End", m.end.pos.toString(), this));
+		break;
+	case PARTS_MOTION_ALPHA:
+	case PARTS_MOTION_CG:
+	case PARTS_MOTION_NUMERAL_NUMBER:
+		children.append(new EntityNode("Begin", m.begin.i, this));
+		children.append(new EntityNode("End", m.end.i, this));
+		break;
+	case PARTS_MOTION_HGAUGE_RATE:
+	case PARTS_MOTION_VGAUGE_RATE:
+	case PARTS_MOTION_MAG_X:
+	case PARTS_MOTION_MAG_Y:
+	case PARTS_MOTION_ROTATE_X:
+	case PARTS_MOTION_ROTATE_Y:
+	case PARTS_MOTION_ROTATE_Z:
+		children.append(new EntityNode("Begin", m.begin.f, this));
+		children.append(new EntityNode("End", m.end.f, this));
+		break;
+	case PARTS_MOTION_INVALID:
+		break;
+	}
+	children.append(new EntityNode("Begin Time", m.beginTime, this));
+	children.append(new EntityNode("End Time", m.endTime, this));
+}
+
+EntityNode::EntityNode(QString name, QVariant value, EntityNode *parentNode)
+	: parent(parentNode)
+	, name(name)
+	, value(value)
+{
+}
+
+EntityModel::EntityModel(const SceneEntity &e, QObject *parent)
+	: QAbstractItemModel(parent)
+{
+	rootNode = new EntityNode(e);
+}
+
+EntityModel::EntityModel(const Parts &p, QObject *parent)
+	: QAbstractItemModel(parent)
+{
+	rootNode = new EntityNode(p);
+}
+
+EntityModel::~EntityModel()
+{
+	delete rootNode;
+}
+
+QVariant EntityModel::data(const QModelIndex &index, int role) const
+{
+	if (!index.isValid())
+		return QVariant();
+	if (role != Qt::DisplayRole)
+		return QVariant();
+
+	EntityNode *node = static_cast<EntityNode*>(index.internalPointer());
+	switch (index.column()) {
+	case 0: return node->name;
+	case 1: return node->value;
+	}
+	return QVariant();
+}
+
+Qt::ItemFlags EntityModel::flags(const QModelIndex &index) const
+{
+	if (!index.isValid())
+		return Qt::NoItemFlags;
+	return QAbstractItemModel::flags(index);
+}
+
+QVariant EntityModel::headerData(int section, Qt::Orientation orientation,
+		int role) const
+{
+	if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
+		return QVariant();
+	// TODO?
+	return QVariant();
+}
+
+QModelIndex EntityModel::index(int row, int column, const QModelIndex &parent) const
+{
+	if (!hasIndex(row, column, parent))
+		return QModelIndex();
+
+	EntityNode *parentNode;
+	if (!parent.isValid())
+		parentNode = rootNode;
+	else
+		parentNode = static_cast<EntityNode*>(parent.internalPointer());
+
+	if (row < 0 || row >= parentNode->children.count())
+		return QModelIndex();
+	return createIndex(row, column, parentNode->children.at(row));
+}
+
+QModelIndex EntityModel::parent(const QModelIndex &index) const
+{
+	if (!index.isValid())
+		return QModelIndex();
+
+	EntityNode *childNode = static_cast<EntityNode*>(index.internalPointer());
+	EntityNode *parentNode = childNode->parent;
+
+	if (parentNode == rootNode)
+		return QModelIndex();
+
+	return createIndex(parentNode->row(), 0, parentNode);
+}
+
+int EntityModel::rowCount(const QModelIndex &parent) const
+{
+	if (parent.column() > 0)
+		return 0;
+
+	EntityNode *parentNode;
+	if (!parent.isValid())
+		parentNode = rootNode;
+	else
+		parentNode = static_cast<EntityNode*>(parent.internalPointer());
+
+	return parentNode->children.count();
+}
+
+int EntityModel::columnCount(const QModelIndex &parent) const
+{
+	return 2;
 }

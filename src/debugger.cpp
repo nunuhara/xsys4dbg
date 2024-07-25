@@ -41,6 +41,7 @@ Debugger::Debugger() : QObject()
 	connect(&client, &DAPClient::breakpointsReceived, this, &Debugger::onBreakpointsReceived);
 	connect(&client, &DAPClient::sceneReceived, this, &Debugger::onSceneReceived);
 	connect(&client, &DAPClient::renderEntityReceived, this, &Debugger::onRenderEntityReceived);
+	connect(&client, &DAPClient::renderPartsReceived, this, &Debugger::onRenderPartsReceived);
 	connect(&client, &DAPClient::errorOccurred, [this](const QString &message) {
 		emit errorOccurred(QString("DAP Error: ") + message);
 	});
@@ -119,6 +120,11 @@ static QHash<int, renderEntityHandler> renderEntityRequests;
 void Debugger::renderEntity(int id, renderEntityHandler handler)
 {
 	renderEntityRequests[client.requestRenderEntity(id)] = handler;
+}
+
+void Debugger::renderParts(int no, renderEntityHandler handler)
+{
+	renderEntityRequests[client.requestRenderParts(no)] = handler;
 }
 
 void Debugger::launch()
@@ -233,7 +239,7 @@ void Debugger::onBreakpointsReceived(int reqId, QVector<uint32_t> &breakpoints)
 	emit breakpointsReceived(instructionBreakpoints);
 }
 
-void Debugger::onSceneReceived(int reqId, const QVector<DAPClient::SceneEntity> &entities)
+void Debugger::onSceneReceived(int reqId, const QVector<SceneEntity> &entities)
 {
 	if (reqId != pendingScene) {
 		qDebug() << "unknown scene request:" << reqId;
@@ -246,6 +252,17 @@ void Debugger::onRenderEntityReceived(int reqId, int entityId, const QPixmap &pi
 {
 	if (!renderEntityRequests.contains(reqId)) {
 		qDebug() << "unknown renderEntity request:" << reqId;
+		return;
+	}
+
+	renderEntityHandler cb = renderEntityRequests.take(reqId);
+	cb(pixmap);
+}
+
+void Debugger::onRenderPartsReceived(int reqId, int partsNo, const QPixmap &pixmap)
+{
+	if (!renderEntityRequests.contains(reqId)) {
+		qDebug() << "unknown renderParts request:" << reqId;
 		return;
 	}
 
