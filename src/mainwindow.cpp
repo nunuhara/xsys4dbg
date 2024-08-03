@@ -84,7 +84,7 @@ void MainWindow::createLandingActions()
 
 	settingsAct = new QAction(tr("Settings"), this);
 	settingsAct->setStatusTip(tr("Change settings"));
-	connect(settingsAct, &QAction::triggered, [this]{
+	connect(settingsAct, &QAction::triggered, []{
 		SettingsDialog dialog;
 		dialog.exec();
 	});
@@ -337,33 +337,37 @@ static void ini_free(struct ini_entry *ini, int nr_entries)
 	free(ini);
 }
 
-void MainWindow::openGameDir(const QString &path)
+void MainWindow::addRecent(const QString &path)
 {
-	QDir dir(path);
-	QFile file(dir.filePath("System40.ini"));
-	if (!file.exists()) {
-		file.setFileName(dir.filePath("AliceStart.ini"));
-		if (!file.exists()) {
-			error("Couldn't find .ini file in given directory");
-			return;
-		}
+	// update list of recently opened games
+	QSettings settings;
+	QStringList recent = settings.value("recent").toStringList();
+	recent.removeAll(path);
+	recent.prepend(path);
+	while (recent.size() > 8) {
+		recent.removeLast();
 	}
+	settings.setValue("recent", recent);
+	updateRecentActions();
+}
 
+bool MainWindow::readIni(const char *ini_path, char **code_name_out, char **game_name_out)
+{
 	int ini_size;
-	struct ini_entry *ini = ini_parse((const char*)file.fileName().toUtf8(), &ini_size);
+	struct ini_entry *ini = ini_parse(ini_path, &ini_size);
 	if (!ini) {
 		error("Failed to parse .ini file");
-		return;
+		return false;
 	}
 
-	const char *code_name = NULL;
-	const char *game_name = NULL;
+	char *code_name = NULL;
+	char *game_name = NULL;
 	for (int i = 0; i < ini_size; i++) {
 		if (!strcmp(ini[i].name->text, "CodeName")) {
 			if (ini[i].value.type != INI_STRING) {
 				error(".ini \"CodeName\" value is not a string");
 				ini_free(ini, ini_size);
-				return;
+				return false;
 			}
 			code_name = ini[i].value.s->text;
 			continue;
@@ -378,14 +382,36 @@ void MainWindow::openGameDir(const QString &path)
 	if (code_name == NULL) {
 		error(".ini file has no \"CodeName\" value");
 		ini_free(ini, ini_size);
-		return;
+		return false;
 	}
+
+	*code_name_out = conv_utf8(code_name);
+	*game_name_out = game_name ? conv_utf8(game_name) : NULL;
+	ini_free(ini, ini_size);
+	return true;
+}
+
+void MainWindow::openGameDir(const QString &path)
+{
+	QDir dir(path);
+	QFile file(dir.filePath("System40.ini"));
+	if (!file.exists()) {
+		file.setFileName(dir.filePath("AliceStart.ini"));
+		if (!file.exists()) {
+			error("Couldn't find .ini file in given directory");
+			return;
+		}
+	}
+
+	char *code_name = NULL;
+	char *game_name = NULL;
+	if (!readIni((const char*)file.fileName().toUtf8(), &code_name, &game_name))
+		return;
 
 	QFile ainFile(dir.filePath(code_name));
 	if (!ainFile.exists()) {
 		error(QString(".ain file \"%1\" does not exist").arg(ainFile.fileName()));
-		ini_free(ini, ini_size);
-		return;
+		goto end;
 	}
 
 	status(QString("Loading .ain file: %1").arg(code_name));
@@ -394,8 +420,7 @@ void MainWindow::openGameDir(const QString &path)
 	struct ain *ainObj;
 	if (!(ainObj = ain_open_conv(ainFile.fileName().toUtf8(), conv_utf8, &err))) {
 		error(QString("Error opening .ain file: %1").arg(ain_strerror(err)));
-		ini_free(ini, ini_size);
-		return;
+		goto end;
 	}
 
 	if (ain)
@@ -417,26 +442,14 @@ void MainWindow::openGameDir(const QString &path)
 
 	if (!Debugger::getInstance().setGameDir(path)) {
 		error("setGameDir failed");
-		ini_free(ini, ini_size);
-		return;
+		goto end;
 	}
 
 	// update window title
-	if (game_name) {
-		setWindowTitle(QString("xsys4dbg - %1").arg(game_name));
-	} else {
-		setWindowTitle(QString("xsys4dbg - %1").arg(code_name));
-	}
+	setWindowTitle(QString("xsys4dbg - %1").arg(game_name ? game_name : code_name));
 
-	// update list of recently opened games
-	QSettings settings;
-	QStringList recent = settings.value("recent").toStringList();
-	recent.removeAll(path);
-	recent.prepend(path);
-	while (recent.size() > 8) {
-		recent.removeLast();
-	}
-	settings.setValue("recent", recent);
-	updateRecentActions();
-	ini_free(ini, ini_size);
+	addRecent(path);
+end:
+	free(code_name);
+	free(game_name);
 }

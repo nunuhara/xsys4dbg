@@ -54,6 +54,8 @@ private:
 
 	void closeEvent(QCloseEvent *event) override;
 
+	void addRecent(const QString &path);
+	bool readIni(const char *ini_path, char **code_name_out, char **game_name_out);
 	void openGameDir(const QString &path);
 
 	QMenu *fileMenu;
