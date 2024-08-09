@@ -96,6 +96,7 @@ void DAPClient::pause()
 void DAPClient::terminate()
 {
 	sendRequest("disconnect");
+	process->closeWriteChannel();
 	// FIXME: handle unresponsive xsystem4 process
 }
 
@@ -103,7 +104,9 @@ void DAPClient::kill(int msec)
 {
 	if (!process)
 		return;
+
 	sendRequest("disconnect");
+	process->closeWriteChannel();
 	if (!process->waitForFinished(msec)) {
 		process->kill();
 	}
@@ -189,6 +192,7 @@ void DAPClient::handleEvent(QJsonObject &event)
 		emit paused();
 	} else if (evtype == "terminated") {
 		state = DS_NOT_STARTED;
+		process->closeWriteChannel();
 		emit terminated();
 	} else {
 		qDebug() << "Unhandled event type: " << evtype;
