@@ -273,6 +273,7 @@ void Debugger::onRenderPartsReceived(int reqId, int partsNo, const QPixmap &pixm
 void Debugger::onInitialized()
 {
 	configureOk = true;
+	client.setInstructionBreakpoints(instructionBreakpoints);
 	emit initialized();
 }
 
