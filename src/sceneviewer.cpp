@@ -333,12 +333,14 @@ EntityNode::EntityNode(const Parts &p)
 	children.append(new EntityNode("Global", p.global, this));
 	children.append(new EntityNode("Delegate Index", p.delegateIndex, this));
 	children.append(new EntityNode("Sprite Deform", p.spriteDeform, this));
-	children.append(new EntityNode("clickable", p.clickable, this));
+	children.append(new EntityNode("Clickable", p.clickable, this));
 	children.append(new EntityNode("OnCursor Sound", p.onCursorSound, this));
 	children.append(new EntityNode("OnClick Sound", p.onClickSound, this));
 	children.append(new EntityNode("Origin Mode", p.originMode, this));
 	children.append(new EntityNode("Linked To", p.linkedTo, this));
 	children.append(new EntityNode("Linked From", p.linkedFrom, this));
+	children.append(new EntityNode("Draw Filter", p.drawFilter, this));
+	children.append(new EntityNode("Message Window", p.messageWindow, this));
 
 	int i = 0;
 	EntityNode *motions;
@@ -352,6 +354,13 @@ EntityNode::EntityNode(QString name, const PartsState &s, EntityNode *parentNode
 	: parent(parentNode)
 	, name(name)
 {
+	if (s.type != PARTS_UNINITIALIZED) {
+		children.append(new EntityNode("Size", s.size.toString(), this));
+		children.append(new EntityNode("Origin Offset", s.originOffset.toString(), this));
+		children.append(new EntityNode("Hitbox", s.hitbox.toString(), this));
+		children.append(new EntityNode("Surface Area", s.surfaceArea.toString(), this));
+	}
+
 	int i = 0;
 	EntityNode *child;
 	switch (s.type) {
@@ -397,6 +406,12 @@ EntityNode::EntityNode(QString name, const PartsState &s, EntityNode *parentNode
 			children.append(new EntityNode(QString("[%1]").arg(i++), op, this));
 		}
 		break;
+	case PARTS_FLASH:
+		value = "Flash";
+		children.append(new EntityNode("Filename", s.data.flash.filename, this));
+		children.append(new EntityNode("Frame Count", s.data.flash.frame_count, this));
+		children.append(new EntityNode("Current Frame", s.data.flash.current_frame, this));
+		break;
 	case PARTS_UNINITIALIZED:
 		value = "<uninitialized>";
 		break;
@@ -410,7 +425,19 @@ EntityNode::EntityNode(QString name, const TextStyle &ts, EntityNode *parentNode
 	: parent(parentNode)
 	, name(name)
 {
-	value = "TODO";
+	children.append(new EntityNode("Face", ts.face, this));
+	children.append(new EntityNode("Size", ts.size, this));
+	children.append(new EntityNode("Bold Width", ts.bold_width, this));
+	children.append(new EntityNode("Weight", ts.weight, this));
+	children.append(new EntityNode("Edge Top", ts.edge_up, this));
+	children.append(new EntityNode("Edge Bottom", ts.edge_down, this));
+	children.append(new EntityNode("Edge Left", ts.edge_left, this));
+	children.append(new EntityNode("Edge Right", ts.edge_right, this));
+	children.append(new EntityNode("Color", ts.color.toString(), this));
+	children.append(new EntityNode("Edge Color", ts.edge_color.toString(), this));
+	children.append(new EntityNode("Scale X", ts.scale_x, this));
+	children.append(new EntityNode("Space Scale X", ts.space_scale_x, this));
+	children.append(new EntityNode("Font Spacing", ts.font_spacing, this));
 }
 
 EntityNode::EntityNode(QString name, const PartsTextLine &line, EntityNode *parentNode)
@@ -468,7 +495,7 @@ EntityNode::EntityNode(QString name, const PartsCpOp &op, EntityNode *parentNode
 		children.append(new EntityNode("Line Space", op.data.text.lineSpace, this));
 		children.append(new EntityNode("Style", op.data.text.style, this));
 		break;
-	case PARTS_INVALID:
+	case PARTS_CP_INVALID:
 		break;
 	}
 }

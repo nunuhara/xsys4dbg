@@ -51,9 +51,29 @@ struct Point3D {
 	int x, y, z;
 };
 
+struct Size {
+	Size() {};
+	Size(const QJsonValue &val);
+	QString toString() const;
+	int w, h;
+};
+
 struct TextStyle {
 	TextStyle() {};
 	TextStyle(const QJsonValue &val);
+	unsigned face;
+	float size;
+	float bold_width;
+	unsigned weight;
+	float edge_left;
+	float edge_up;
+	float edge_right;
+	float edge_down;
+	Color color;
+	Color edge_color;
+	float scale_x;
+	float space_scale_x;
+	float font_spacing;
 };
 
 enum PartsType {
@@ -66,6 +86,7 @@ enum PartsType {
 	PARTS_HGAUGE,
 	PARTS_VGAUGE,
 	PARTS_CONSTRUCTION_PROCESS,
+	PARTS_FLASH,
 };
 
 struct PartsCg {
@@ -169,12 +190,22 @@ struct PartsConstructionProcess {
 	QVector<PartsCpOp> operations;
 };
 
+struct PartsFlash {
+	QString filename;
+	int frame_count;
+	int current_frame;
+};
+
 struct PartsState {
 	PartsState(const QJsonObject &obj);
 	PartsState(const PartsState &other);
 	~PartsState();
 	QString description();
 	PartsType type;
+	Size size;
+	Point originOffset;
+	Rectangle hitbox;
+	Rectangle surfaceArea;
 	union PartsStateData {
 		PartsStateData(PartsType type);
 		~PartsStateData() {};
@@ -184,6 +215,7 @@ struct PartsState {
 		PartsNumeral num;
 		PartsGauge gauge;
 		PartsConstructionProcess cproc;
+		PartsFlash flash;
 	} data;
 };
 
@@ -253,6 +285,7 @@ struct Parts {
 	int linkedTo;
 	int linkedFrom;
 	int drawFilter;
+	bool messageWindow;
 	QVector<PartsMotion> motions;
 	QVector<Parts> children;
 	Parts *parent;

@@ -75,6 +75,7 @@ bool Debugger::setGameDir(const QString &path)
 	gameDir = QDir(path);
 	if (!gameDir.exists())
 		return false;
+	instructionBreakpoints.clear();
 	if (client.connected())
 		client.terminate();
 	else

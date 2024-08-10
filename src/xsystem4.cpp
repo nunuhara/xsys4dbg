@@ -101,6 +101,28 @@ QString Point::toString() const
 	return QString("(%1 %2)").arg(x).arg(y);
 }
 
+Size::Size(const QJsonValue &val)
+{
+	if (val.isObject()) {
+		QJsonObject obj = val.toObject();
+		w = obj["w"].toInt();
+		h = obj["h"].toInt();
+	} else if (val.isArray()) {
+		QJsonArray arr = val.toArray();
+		w = arr[0].toInt();
+		h = arr[1].toInt();
+	} else {
+		qDebug() << "invalid Point object" << val;
+		w = -1;
+		h = -1;
+	}
+}
+
+QString Size::toString() const
+{
+	return QString("(%1 %2)").arg(w).arg(h);
+}
+
 Point3D::Point3D(const QJsonValue &val)
 {
 	if (val.isObject()) {
@@ -132,6 +154,20 @@ TextStyle::TextStyle(const QJsonValue &val)
 		qDebug() << "invalid TextStyle object:" << val;
 		return;
 	}
+	QJsonObject obj = val.toObject();
+	face = obj["face"].toInt();
+	size = obj["size"].toDouble();
+	bold_width = obj["bold_width"].toDouble();
+	weight = obj["weight"].toInt();
+	edge_left = obj["edge_left"].toDouble();
+	edge_up = obj["edge_up"].toDouble();
+	edge_right = obj["edge_right"].toDouble();
+	edge_down = obj["edge_down"].toDouble();
+	color = Color(obj["color"]);
+	edge_color = Color(obj["edge_color"]);
+	scale_x = obj["scale_x"].toDouble();
+	space_scale_x = obj["space_scale_x"].toDouble();
+	font_spacing = obj["font_spacing"].toDouble();
 }
 
 static PartsType stringToPartsType(const QString &name)
@@ -152,6 +188,8 @@ static PartsType stringToPartsType(const QString &name)
 		return PARTS_VGAUGE;
 	if (name == "construction_process")
 		return PARTS_CONSTRUCTION_PROCESS;
+	if (name == "flash")
+		return PARTS_FLASH;
 	return PARTS_INVALID;
 }
 
@@ -325,6 +363,9 @@ PartsState::PartsStateData::PartsStateData(PartsType type)
 	case PARTS_CONSTRUCTION_PROCESS:
 		new(&cproc) PartsConstructionProcess();
 		break;
+	case PARTS_FLASH:
+		new(&flash) PartsFlash();
+		break;
 	case PARTS_INVALID:
 	case PARTS_UNINITIALIZED:
 		break;
@@ -335,6 +376,10 @@ PartsState::PartsState(const QJsonObject &obj)
 	: data(stringToPartsType(obj["type"].toString()))
 {
 	type = stringToPartsType(obj["type"].toString());
+	size = Size(obj["size"].toObject());
+	originOffset = Point(obj["origin_offset"].toObject());
+	hitbox = Rectangle(obj["hitbox"].toObject());
+	surfaceArea = Rectangle(obj["surface_area"].toObject());
 	switch (type) {
 	case PARTS_CG:
 		data.cg.no = obj["no"].toInt();
@@ -377,6 +422,11 @@ PartsState::PartsState(const QJsonObject &obj)
 			data.cproc.operations.append(PartsCpOp(val.toObject()));
 		}
 		break;
+	case PARTS_FLASH:
+		data.flash.filename = obj["filename"].toString();
+		data.flash.frame_count = obj["frame_count"].toInt();
+		data.flash.current_frame = obj["current_frame"].toInt();
+		break;
 	case PARTS_INVALID:
 	case PARTS_UNINITIALIZED:
 		break;
@@ -387,6 +437,10 @@ PartsState::PartsState(const PartsState &other)
 	: data(PARTS_INVALID)
 {
 	type = other.type;
+	size = other.size;
+	originOffset = other.originOffset;
+	hitbox = other.hitbox;
+	surfaceArea = other.surfaceArea;
 	switch (type) {
 	case PARTS_CG:
 		new(&data.cg) PartsCg(other.data.cg);
@@ -406,6 +460,9 @@ PartsState::PartsState(const PartsState &other)
 		break;
 	case PARTS_CONSTRUCTION_PROCESS:
 		new(&data.cproc) PartsConstructionProcess(other.data.cproc);
+		break;
+	case PARTS_FLASH:
+		new(&data.flash) PartsFlash(other.data.flash);
 		break;
 	case PARTS_INVALID:
 	case PARTS_UNINITIALIZED:
@@ -435,6 +492,9 @@ PartsState::~PartsState()
 	case PARTS_CONSTRUCTION_PROCESS:
 		data.cproc.~PartsConstructionProcess();
 		break;
+	case PARTS_FLASH:
+		data.flash.~PartsFlash();
+		break;
 	case PARTS_INVALID:
 	case PARTS_UNINITIALIZED:
 		break;
@@ -461,6 +521,8 @@ QString PartsState::description()
 		return "VGauge";
 	case PARTS_CONSTRUCTION_PROCESS:
 		return "Construction Process";
+	case PARTS_FLASH:
+		return "Flash";
 	case PARTS_UNINITIALIZED:
 		return "Uninitialized";
 	case PARTS_INVALID:
@@ -570,6 +632,7 @@ Parts::Parts(const QJsonObject &obj, Parts *parentPtr)
 	linkedTo = obj["linked_to"].toInt();
 	linkedFrom = obj["linked_from"].toInt();
 	drawFilter = obj["draw_filter"].toInt();
+	messageWindow = obj["message_window"].toBool();
 	for (const QJsonValue &val : obj["motions"].toArray()) {
 		motions.append(PartsMotion(val.toObject()));
 	}
@@ -596,6 +659,7 @@ Parts::Parts(const Parts &other)
 	, linkedTo(other.linkedTo)
 	, linkedFrom(other.linkedFrom)
 	, drawFilter(other.drawFilter)
+	, messageWindow(other.messageWindow)
 	, motions(other.motions)
 	, children(other.children)
 	, parent(other.parent)
