@@ -131,7 +131,7 @@ void CodeArea::addressAreaPaintEvent(QPaintEvent *event)
 			painter.setPen(Qt::darkGray);
 			painter.drawText(0, top, addressArea->width() - H_PAD,
 					fontMetrics().height(), Qt::AlignRight, number);
-			if (instructions[blockNumber].isBreakpoint) {
+			if (blockNumber < instructions.size() && instructions[blockNumber].isBreakpoint) {
 				int size = bottom - top;
 				painter.drawPixmap(0, top, size, size, breakpointImage);
 			}
