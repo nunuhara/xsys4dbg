@@ -219,13 +219,14 @@ void MainWindow::createOpenedActions()
 		stepAct->setDisabled(true);
 		finishAct->setDisabled(true);
 	});
-	connect(dbg, &Debugger::paused, [this]{
+	connect(dbg, &Debugger::paused, [this] (const QString &message) {
 		runAct->setEnabled(true);
 		pauseAct->setDisabled(true);
 		stopAct->setEnabled(true);
 		nextAct->setEnabled(true);
 		stepAct->setEnabled(true);
 		finishAct->setEnabled(true);
+		status(message);
 	});
 	connect(dbg, &Debugger::continued, [this]{
 		runAct->setDisabled(true);

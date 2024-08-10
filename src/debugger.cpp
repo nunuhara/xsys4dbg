@@ -290,10 +290,10 @@ void Debugger::onContinued()
 	emit continued();
 }
 
-void Debugger::onPaused()
+void Debugger::onPaused(const QString &message)
 {
 	configureOk = true;
-	emit paused();
+	emit paused(message);
 
 	stackTrace.clear();
 	pendingVariables.clear();

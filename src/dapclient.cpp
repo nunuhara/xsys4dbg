@@ -189,7 +189,9 @@ void DAPClient::handleEvent(QJsonObject &event)
 		emit initialized();
 	} else if (evtype == "stopped") {
 		state = DS_PAUSED;
-		emit paused();
+		QJsonObject body = event["body"].toObject();
+		QString message = body["description"].toString();
+		emit paused(message);
 	} else if (evtype == "terminated") {
 		state = DS_NOT_STARTED;
 		process->closeWriteChannel();

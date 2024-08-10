@@ -77,7 +77,7 @@ public slots:
 signals:
 	void initialized();
 	void launched();
-	void paused();
+	void paused(const QString &message);
 	void continued();
 	void terminated();
 
@@ -93,7 +93,7 @@ private slots:
 	void onInitialized();
 	void onLaunched();
 	void onContinued();
-	void onPaused();
+	void onPaused(const QString &message);
 	void onTerminated();
 	void onStackTraceReceived(int reqId, QVector<DAPClient::StackFrame> &frames);
 	void onScopesReceived(int reqId, QVector<DAPClient::Scope> &scopes);

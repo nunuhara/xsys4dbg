@@ -79,7 +79,7 @@ public slots:
 signals:
 	void initialized();
 	void launched();
-	void paused();
+	void paused(const QString &message);
 	void continued();
 	void terminated();
 	void terminateFinished();
