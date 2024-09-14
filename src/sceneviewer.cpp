@@ -162,15 +162,27 @@ void SceneViewer::onActivated(const QModelIndex &index)
 	}
 
 	if (node->type == SceneNode::ENTITY) {
-		Debugger::getInstance().renderEntity(node->data.entity->id,
-				[this, node, id](const QPixmap &pixmap) {
-			if (id != sceneId)
-				return;
-			node->image = pixmap;
-			QLabel *imageLabel = new QLabel;
-			imageLabel->setPixmap(pixmap);
-			imageArea->setWidget(imageLabel);
-		});
+		if (node->data.entity->part.has_value()) {
+			Debugger::getInstance().renderParts(node->data.entity->part->no,
+					[this, node, id](const QPixmap &pixmap) {
+				if (id != sceneId)
+					return;
+				node->image = pixmap;
+				QLabel *imageLabel = new QLabel;
+				imageLabel->setPixmap(pixmap);
+				imageArea->setWidget(imageLabel);
+			});
+		} else {
+			Debugger::getInstance().renderEntity(node->data.entity->id,
+					[this, node, id](const QPixmap &pixmap) {
+				if (id != sceneId)
+					return;
+				node->image = pixmap;
+				QLabel *imageLabel = new QLabel;
+				imageLabel->setPixmap(pixmap);
+				imageArea->setWidget(imageLabel);
+			});
+		}
 	} else if (node->type == SceneNode::PARTS) {
 		Debugger::getInstance().renderParts(node->data.parts->no,
 				[this, node, id](const QPixmap &pixmap) {
