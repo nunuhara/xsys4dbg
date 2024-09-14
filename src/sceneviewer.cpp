@@ -301,6 +301,9 @@ struct EntityNode
 		return 0;
 	}
 
+	void loadSpriteParams(const struct Sprite &sp);
+	void loadPartsParams(const Parts &p);
+
 	EntityNode *parent;
 	QVector<EntityNode*> children;
 
@@ -308,22 +311,17 @@ struct EntityNode
 	QVariant value;
 };
 
-EntityNode::EntityNode(const SceneEntity &e)
-	: parent(nullptr)
+void EntityNode::loadSpriteParams(const struct Sprite &sp)
 {
-	children.append(new EntityNode("Z", e.z, this));
-	if (e.sprite.no < 0)
-		return;
-
-	children.append(new EntityNode("Color", e.sprite.color.toString(), this));
-	children.append(new EntityNode("Multiply Color", e.sprite.multiply_color.toString(), this));
-	children.append(new EntityNode("Add Color", e.sprite.add_color.toString(), this));
-	children.append(new EntityNode("Blend Rate", e.sprite.blend_rate, this));
-	children.append(new EntityNode("Bounding Rect", e.sprite.rect.toString(), this));
-	children.append(new EntityNode("CG No", e.sprite.cg_no, this));
+	children.append(new EntityNode("Color", sp.color.toString(), this));
+	children.append(new EntityNode("Multiply Color", sp.multiply_color.toString(), this));
+	children.append(new EntityNode("Add Color", sp.add_color.toString(), this));
+	children.append(new EntityNode("Blend Rate", sp.blend_rate, this));
+	children.append(new EntityNode("Bounding Rect", sp.rect.toString(), this));
+	children.append(new EntityNode("CG No", sp.cg_no, this));
 }
 
-EntityNode::EntityNode(const Parts &p)
+void EntityNode::loadPartsParams(const Parts &p)
 {
 	children.append(new EntityNode("State", p.state, this));
 	children.append(new EntityNode("Default", p.deflt, this));
@@ -348,6 +346,23 @@ EntityNode::EntityNode(const Parts &p)
 	for (const PartsMotion &m : p.motions) {
 		motions->children.append(new EntityNode(QString("[%1]").arg(i++), m, this));
 	}
+}
+
+EntityNode::EntityNode(const SceneEntity &e)
+	: parent(nullptr)
+{
+	children.append(new EntityNode("Z", e.z, this));
+
+	if (e.sprite.has_value()) {
+		loadSpriteParams(*e.sprite);
+	} else if (e.part.has_value()) {
+		loadPartsParams(*e.part);
+	}
+}
+
+EntityNode::EntityNode(const Parts &p)
+{
+	loadPartsParams(p);
 }
 
 EntityNode::EntityNode(QString name, const PartsState &s, EntityNode *parentNode)

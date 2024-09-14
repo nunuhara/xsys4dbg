@@ -17,6 +17,7 @@
 #ifndef XSYS4DBG_XSYSTEM4_HPP
 #define XSYS4DBG_XSYSTEM4_HPP
 
+#include <optional>
 #include <QVector>
 #include <QPixmap>
 
@@ -312,7 +313,8 @@ struct SceneEntity {
 	int id;
 	int z;
 	int z2;
-	struct Sprite sprite;
+	std::optional<struct Sprite> sprite;
+	std::optional<Parts> part;
 	QVector<Parts> parts;
 };
 

@@ -703,7 +703,6 @@ SceneEntity::SceneEntity(const QJsonValue &val)
 		qDebug() << "invalid SceneEntity object:" << val;
 		name = "<invalid>";
 		id = -1;
-		sprite.no = -1;
 		return;
 	}
 
@@ -715,19 +714,21 @@ SceneEntity::SceneEntity(const QJsonValue &val)
 
 	// SACT2/Stoat/Chipmunk sprite
 	if (obj.contains("sprite")) {
-		sprite = Sprite(obj["sprite"]);
-		name = QString("sprite %1").arg(sprite.no);
-	} else {
-		sprite.no = -1;
+		sprite.emplace(obj["sprite"]);
+		name = QString("sprite %1").arg(sprite->no);
+	} else if (obj.contains("parts")) {
+		part.emplace(obj["parts"].toObject());
+		name = QString("parts %1").arg(part->no);
 	}
 
-	// GoatGUIEngine/GUIEngine/PartsEngine
+	/* TODO: implement a separate command to get hierarchical parts list
 	if (obj.contains("parts")) {
 		for (const QJsonValue &val : obj["parts"].toArray()) {
 			parts.append(Parts(val.toObject()));
 		}
 		name = "PartsEngine";
 	}
+	*/
 }
 
 QPixmap parseTexture(const QJsonValue &val)
