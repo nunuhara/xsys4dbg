@@ -536,8 +536,8 @@ void CodeViewer::stackTraceReceived(QVector<Debugger::StackFrame> &frames)
 	}
 
 	// activate current function
-	frameSelector->setCurrentIndex(frameSelector->count() - 1);
-	stackFrameChanged(stackTrace.size() - 1);
+	frameSelector->setCurrentIndex(0);
+	stackFrameChanged(0);
 }
 
 void CodeViewer::stackFrameChanged(int i)
